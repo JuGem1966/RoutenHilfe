@@ -203,14 +203,14 @@ function renderStopsTable() {
       travelCell = '<span class="hint-inline">– Start –</span>';
     } else {
       const distLabel = (stop.travelKm !== null && stop.travelKm !== undefined) ? `<span class="dist">${Math.round(stop.travelKm)} km</span>` : '';
-      travelCell = `<input type="number" min="0" step="1" data-field="travelMin" data-id="${stop.id}" value="${stop.travelMin}" placeholder="Min">${distLabel}`;
+      travelCell = `<input type="text" inputmode="numeric" pattern="[0-9]*" data-field="travelMin" data-id="${stop.id}" value="${stop.travelMin}" placeholder="Min">${distLabel}`;
     }
     tr.innerHTML = `
       <td class="row-num">${i + 1}</td>
       <td><input type="text" data-field="name" data-id="${stop.id}" value="${escapeHtml(stop.name)}"></td>
       <td class="travel-cell">${travelCell}</td>
       <td><input type="time" data-field="planArr" data-id="${stop.id}" value="${stop.planArr}"></td>
-      <td><input type="number" min="0" step="5" data-field="planDur" data-id="${stop.id}" value="${stop.planDur}" placeholder="Min"></td>
+      <td><input type="text" inputmode="numeric" pattern="[0-9]*" data-field="planDur" data-id="${stop.id}" value="${stop.planDur}" placeholder="Min"></td>
       <td><input type="time" data-field="planDep" data-id="${stop.id}" value="${stop.planDep}"></td>
       <td><button class="remove-row-btn" data-remove="${stop.id}" title="Entfernen"><i class="fa-solid fa-trash"></i></button></td>
     `;
@@ -265,7 +265,15 @@ function bindPlanningEvents() {
     const idx = state.stops.findIndex(s => s.id === id);
     if (idx === -1) return;
     const stop = state.stops[idx];
-    stop[field] = target.value;
+
+    // Bei den reinen Minuten-Feldern (travelMin, planDur) nur Ziffern zulassen,
+    // damit hier nicht versehentlich Buchstaben o.ä. landen können.
+    let value = target.value;
+    if (field === 'travelMin' || field === 'planDur') {
+      value = value.replace(/[^0-9]/g, '');
+      if (value !== target.value) target.value = value;
+    }
+    stop[field] = value;
 
     // Manuell bearbeitete Ankunft/Abfahrt gilt ab jetzt als fixiert (wird bei
     // der Kettenberechnung nicht mehr automatisch überschrieben) - außer das
@@ -282,12 +290,23 @@ function bindPlanningEvents() {
       stop.depAuto = true;
     }
 
+    // Cursor-Position vor dem Neuaufbau merken (bei Zahlen-Feldern zählt vor
+    // allem: Cursor am Ende = weitere Ziffern werden hinten angehängt statt vorne).
+    const caretPos = (typeof target.selectionStart === 'number') ? target.selectionStart : null;
+
     recalcChain();
     renderStopsTable();
     saveState();
-    // Fokus nach Re-Render wiederherstellen
+
+    // Fokus + Cursor-Position nach Re-Render wiederherstellen
     const again = document.querySelector(`[data-id="${id}"][data-field="${field}"]`);
-    if (again) { again.focus(); }
+    if (again) {
+      again.focus();
+      if (caretPos !== null && typeof again.setSelectionRange === 'function') {
+        const pos = Math.min(caretPos, again.value.length);
+        again.setSelectionRange(pos, pos);
+      }
+    }
   });
 
   document.getElementById('stops-tbody').addEventListener('click', (e) => {
