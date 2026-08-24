@@ -120,6 +120,8 @@ function makeStop(name) {
     travelMin: '',   // Fahrzeit von vorigem Halt (Minuten) - manuell oder automatisch berechnet
     travelKm: null,  // Distanz von vorigem Halt (km) - nur informativ, automatisch berechnet
     geo: null,       // {lat, lon, displayName} - Ergebnis der letzten Geokodierung
+    geoFailed: false, // true = automatische Adress-Suche hat diesen Ort NICHT gefunden (Zeile wird rot markiert)
+    geoManual: false, // true = Position wurde von Hand auf der Karte gewählt (wird bei erneuter Berechnung nicht überschrieben)
     planArr: '',
     planDur: '',
     planDep: '',
@@ -205,9 +207,23 @@ function renderStopsTable() {
       const distLabel = (stop.travelKm !== null && stop.travelKm !== undefined) ? `<span class="dist">${Math.round(stop.travelKm)} km</span>` : '';
       travelCell = `<input type="text" inputmode="numeric" pattern="[0-9]*" data-field="travelMin" data-id="${stop.id}" value="${stop.travelMin}" placeholder="Min">${distLabel}`;
     }
+    if (stop.geoFailed) {
+      tr.classList.add('stop-not-found');
+    }
+    const nameCellExtra = stop.geoFailed
+      ? `<div class="geo-fail-row">
+           <span class="geo-fail-label"><i class="fa-solid fa-triangle-exclamation"></i> Ort nicht gefunden</span>
+           <button type="button" class="btn btn-secondary btn-sm pick-map-btn" data-pick-map="${stop.id}"><i class="fa-solid fa-map-location-dot"></i> Auf Karte wählen</button>
+         </div>`
+      : (stop.geoManual
+          ? `<div class="geo-fail-row">
+               <span class="geo-manual-label"><i class="fa-solid fa-map-pin"></i> Position manuell gesetzt</span>
+               <button type="button" class="btn btn-secondary btn-sm pick-map-btn" data-pick-map="${stop.id}"><i class="fa-solid fa-map-location-dot"></i> Auf Karte ändern</button>
+             </div>`
+          : '');
     tr.innerHTML = `
       <td class="row-num">${i + 1}</td>
-      <td><input type="text" data-field="name" data-id="${stop.id}" value="${escapeHtml(stop.name)}"></td>
+      <td><input type="text" data-field="name" data-id="${stop.id}" value="${escapeHtml(stop.name)}">${nameCellExtra}</td>
       <td class="travel-cell">${travelCell}</td>
       <td><input type="time" data-field="planArr" data-id="${stop.id}" value="${stop.planArr}"></td>
       <td><input type="text" inputmode="numeric" pattern="[0-9]*" data-field="planDur" data-id="${stop.id}" value="${stop.planDur}" placeholder="Min"></td>
@@ -310,12 +326,21 @@ function bindPlanningEvents() {
   });
 
   document.getElementById('stops-tbody').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-remove]');
-    if (!btn) return;
-    const id = btn.getAttribute('data-remove');
-    state.stops = state.stops.filter(s => s.id !== id);
-    renderStopsTable();
-    saveState();
+    const removeBtn = e.target.closest('[data-remove]');
+    if (removeBtn) {
+      const id = removeBtn.getAttribute('data-remove');
+      state.stops = state.stops.filter(s => s.id !== id);
+      renderStopsTable();
+      saveState();
+      return;
+    }
+    const pickBtn = e.target.closest('[data-pick-map]');
+    if (pickBtn) {
+      const id = pickBtn.getAttribute('data-pick-map');
+      const stop = state.stops.find(s => s.id === id);
+      if (stop) openMapPicker(stop);
+      return;
+    }
   });
 
   document.getElementById('route-start-time').addEventListener('input', (e) => {
@@ -578,15 +603,26 @@ async function calcTravelTimes() {
 
   for (let i = 0; i < state.stops.length; i++) {
     const stop = state.stops[i];
+
+    // Manuell auf der Karte gesetzte Positionen nicht erneut automatisch
+    // suchen/überschreiben - die Koordinate bleibt bestehen.
+    if (stop.geoManual && stop.geo) {
+      stop.geoFailed = false;
+      coords.push(stop.geo);
+      continue;
+    }
+
     btn.innerHTML = `<span class="geo-spinner"></span> Löse Adresse ${i + 1}/${state.stops.length} auf …`;
     feedback.textContent = `Suche Position von "${stop.name}" …`;
     try {
       const result = await geocodeWithFallback(stop.name);
       if (!result) {
+        stop.geoFailed = true;
         failed.push(stop.name);
         coords.push(null);
       } else {
         stop.geo = result.geo;
+        stop.geoFailed = false;
         coords.push(result.geo);
         if (result.variantIndex > 0) {
           simplified.push(`${stop.name.split(',')[0].trim()} → "${result.usedQuery}"`);
@@ -594,6 +630,7 @@ async function calcTravelTimes() {
       }
     } catch (e) {
       if (String(e.message).startsWith('NETWORK:')) networkProblem = true;
+      stop.geoFailed = true;
       failed.push(stop.name + ' (' + e.message + ')');
       coords.push(null);
     }
@@ -612,7 +649,9 @@ async function calcTravelTimes() {
   if (failed.length > 0) {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
-    feedback.textContent = `Adresse(n) nicht gefunden: ${failed.join(', ')}. Bitte Namen präzisieren (z. B. Stadt/Land ergänzen) und erneut versuchen.`;
+    renderStopsTable();
+    saveState();
+    feedback.textContent = `Adresse(n) nicht gefunden (rot markiert): ${failed.join(', ')}. Bitte Namen präzisieren (z. B. Stadt/Land ergänzen), oder die Position direkt über "Auf Karte wählen" bei der betroffenen Zeile setzen und danach erneut berechnen.`;
     feedback.className = 'feedback error';
     return;
   }
@@ -1025,6 +1064,124 @@ function bindGpsSuggestionEvents() {
   });
 }
 
+// ---------- Karten-Auswahl: Position von Hand markieren ----------
+//
+// Kommt zum Einsatz, wenn die automatische Adress-Suche (Nominatim) einen
+// Ort nicht finden konnte (rot markierte Zeile), oder wenn eine bereits
+// gefundene Position von Hand korrigiert werden soll. Nutzt Leaflet mit
+// OpenStreetMap-Kartenkacheln (Open Source, kein API-Key nötig) - die so
+// gewählte Koordinate fließt danach ganz normal in die OSRM-Fahrzeit-
+// berechnung ein, genau wie eine automatisch gefundene Position.
+
+let mapPickerLeaflet = null;   // Leaflet-Kartenobjekt (wird bei Bedarf einmalig erzeugt)
+let mapPickerMarker = null;    // aktuell gesetzter Marker
+let mapPickerStop = null;      // der Haltepunkt, für den gerade eine Position gewählt wird
+let mapPickerCoords = null;    // {lat, lon} der aktuell im Dialog gewählten Position
+
+function findNearestKnownGeo(stop) {
+  // Sucht in der Stop-Liste einen Nachbarn mit bekannter Position, um die
+  // Karte sinnvoll zu zentrieren (z. B. den vorigen oder nächsten Haltepunkt).
+  const idx = state.stops.findIndex(s => s.id === stop.id);
+  for (let offset = 1; offset < state.stops.length; offset++) {
+    const before = state.stops[idx - offset];
+    if (before && before.geo) return before.geo;
+    const after = state.stops[idx + offset];
+    if (after && after.geo) return after.geo;
+  }
+  return null;
+}
+
+function openMapPicker(stop) {
+  mapPickerStop = stop;
+  mapPickerCoords = (stop.geo && typeof stop.geo.lat === 'number') ? { lat: stop.geo.lat, lon: stop.geo.lon } : null;
+
+  document.getElementById('map-picker-stop-name').textContent = stop.name;
+  document.getElementById('map-picker-feedback').textContent = '';
+  document.getElementById('map-picker-feedback').className = 'feedback';
+  document.getElementById('map-picker-save-btn').disabled = !mapPickerCoords;
+  document.getElementById('map-picker-overlay').classList.remove('hidden');
+
+  // Start-Ansicht: vorhandene Position > Position eines Nachbar-Haltepunkts > Europa-Übersicht
+  const fallback = findNearestKnownGeo(stop);
+  const startLat = mapPickerCoords ? mapPickerCoords.lat : (fallback ? fallback.lat : 47.0);
+  const startLon = mapPickerCoords ? mapPickerCoords.lon : (fallback ? fallback.lon : 10.0);
+  const startZoom = mapPickerCoords ? 14 : (fallback ? 11 : 5);
+
+  // Leaflet-Karte erst beim ersten Öffnen erzeugen (das Overlay ist vorher
+  // "display:none", eine Karte in einem unsichtbaren Container würde
+  // falsche Kachel-Maße berechnen).
+  if (!mapPickerLeaflet) {
+    mapPickerLeaflet = L.map('map-picker-map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende'
+    }).addTo(mapPickerLeaflet);
+    mapPickerLeaflet.on('click', (ev) => {
+      setMapPickerPosition(ev.latlng.lat, ev.latlng.lng);
+    });
+  }
+
+  mapPickerLeaflet.setView([startLat, startLon], startZoom);
+  // Nach dem Sichtbar-Werden des Overlays muss Leaflet seine Kachel-Größe neu berechnen.
+  setTimeout(() => { if (mapPickerLeaflet) mapPickerLeaflet.invalidateSize(); }, 50);
+
+  if (mapPickerMarker) {
+    mapPickerLeaflet.removeLayer(mapPickerMarker);
+    mapPickerMarker = null;
+  }
+  if (mapPickerCoords) {
+    setMapPickerPosition(mapPickerCoords.lat, mapPickerCoords.lon);
+  }
+}
+
+function setMapPickerPosition(lat, lon) {
+  mapPickerCoords = { lat, lon };
+  if (mapPickerMarker) {
+    mapPickerMarker.setLatLng([lat, lon]);
+  } else {
+    mapPickerMarker = L.marker([lat, lon], { draggable: true }).addTo(mapPickerLeaflet);
+    mapPickerMarker.on('dragend', () => {
+      const p = mapPickerMarker.getLatLng();
+      mapPickerCoords = { lat: p.lat, lon: p.lng };
+      document.getElementById('map-picker-save-btn').disabled = false;
+    });
+  }
+  document.getElementById('map-picker-save-btn').disabled = false;
+}
+
+function closeMapPicker() {
+  document.getElementById('map-picker-overlay').classList.add('hidden');
+  mapPickerStop = null;
+  mapPickerCoords = null;
+}
+
+function bindMapPickerEvents() {
+  document.getElementById('map-picker-close-btn').addEventListener('click', closeMapPicker);
+  document.getElementById('map-picker-cancel-btn').addEventListener('click', closeMapPicker);
+
+  document.getElementById('map-picker-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'map-picker-overlay') closeMapPicker(); // Klick auf den dunklen Hintergrund
+  });
+
+  document.getElementById('map-picker-save-btn').addEventListener('click', () => {
+    if (!mapPickerStop || !mapPickerCoords) return;
+    const stopName = mapPickerStop.name;
+    mapPickerStop.geo = {
+      lat: mapPickerCoords.lat,
+      lon: mapPickerCoords.lon,
+      displayName: 'Manuell auf Karte gewählt'
+    };
+    mapPickerStop.geoFailed = false;
+    mapPickerStop.geoManual = true;
+    saveState();
+    renderStopsTable();
+    closeMapPicker();
+    const feedback = document.getElementById('auto-calc-feedback');
+    feedback.textContent = `Position für "${stopName}" wurde von Hand gesetzt. Bitte "Fahrzeiten automatisch berechnen" erneut ausführen, damit die Fahrzeiten mit der neuen Position aktualisiert werden.`;
+    feedback.className = 'feedback ok';
+  });
+}
+
 // ---------- Init ----------
 
 // Wendet den aktuellen `state` komplett auf die UI an (Planungsansicht oder
@@ -1061,6 +1218,7 @@ function init() {
   loadState();
   bindPlanningEvents();
   bindGpsSuggestionEvents();
+  bindMapPickerEvents();
   applyStateToUI();
 }
 

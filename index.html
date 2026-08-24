@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -105,10 +106,27 @@
 
 </main>
 
+<div id="map-picker-overlay" class="map-picker-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="map-picker-title">
+  <div class="map-picker-box">
+    <div class="map-picker-header">
+      <h3 id="map-picker-title"><i class="fa-solid fa-map-location-dot"></i> Position wählen: <span id="map-picker-stop-name"></span></h3>
+      <button id="map-picker-close-btn" class="banner-close" aria-label="Schließen">&times;</button>
+    </div>
+    <p class="hint">Klicke auf die Karte, um die genaue Position dieses Haltepunkts zu markieren, oder verschiebe den Marker. Die Karte startet in der Nähe eines bereits gefundenen Nachbar-Haltepunkts, falls vorhanden.</p>
+    <div id="map-picker-map"></div>
+    <p id="map-picker-feedback" class="feedback"></p>
+    <div class="map-picker-actions">
+      <button id="map-picker-cancel-btn" class="btn btn-secondary">Abbrechen</button>
+      <button id="map-picker-save-btn" class="btn btn-success" disabled><i class="fa-solid fa-check"></i> Position übernehmen</button>
+    </div>
+  </div>
+</div>
+
 <footer class="app-footer">
   <p>Diese Seite läuft komplett lokal im Browser (keine Server-Verbindung). Für Erinnerungen und GPS-Erkennung muss dieser Tab geöffnet bleiben. Der Fortschritt wird lokal auf diesem Gerät gespeichert und kann zusätzlich als JSON-Datei exportiert werden.</p>
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

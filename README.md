@@ -53,6 +53,18 @@ werden – über die kostenlosen Open-Source-Dienste **Nominatim** (Geocoding) u
      Vorschau-Umgebung) werden von „Adresse nicht gefunden" unterschieden.
    - Fahrzeiten können jederzeit auch manuell eingetragen/korrigiert werden
      (z. B. bei bekanntem Stau oder abweichender Einschätzung)
+   - **Nicht gefundene Orte rot markiert + Position auf Karte wählen**: Konnte
+     ein Haltepunkt auch nach allen Fallback-Varianten nicht automatisch
+     gefunden werden, wird die Tabellenzeile rot markiert und ein Button
+     „Auf Karte wählen“ angezeigt. Ein Klick öffnet einen Kartendialog
+     (Leaflet + OpenStreetMap-Kacheln, kostenlos, kein API-Key), der sich
+     automatisch in der Nähe eines bereits gefundenen Nachbar-Haltepunkts
+     zentriert. Per Klick (oder Ziehen des Markers) wird die gewünschte
+     Position markiert und mit „Position übernehmen“ gespeichert – die Zeile
+     wechselt danach zu einem grünen Hinweis „Position manuell gesetzt“ mit
+     der Möglichkeit, die Position jederzeit erneut zu ändern. Die so gesetzte
+     Koordinate fließt normal in die OSRM-Fahrzeitberechnung ein und wird bei
+     erneuter automatischer Berechnung nicht überschrieben.
 
 3. **Route starten & Live-Begleitung**
    - Ankunfts-Kommentar: „n Minuten früher/später als geplant"
@@ -122,7 +134,9 @@ ohne Unterseiten oder URL-Parameter.
       id, name,
       travelMin,   // Fahrzeit von vorigem Halt (Min), manuell oder automatisch
       travelKm,    // Distanz von vorigem Halt (km), nur informativ
-      geo,         // { lat, lon, displayName } – Ergebnis der letzten Geokodierung
+      geo,         // { lat, lon, displayName } – Ergebnis der letzten Geokodierung (auch bei manueller Kartenwahl)
+      geoFailed,   // true = automatische Adress-Suche hat diesen Ort nicht gefunden (rote Zeile)
+      geoManual,   // true = Position wurde von Hand auf der Karte gewählt
       planArr, planDur, planDep,   // geplante Zeiten
       actualArr, actualDep,        // tatsächliche Zeiten
       status       // 'pending' | 'arrived' | 'departed'
@@ -167,8 +181,8 @@ deaktiviert).
 
 - Optional: Wahl des Reiseprofils (Auto/Fahrrad/Fuß) mit Fallback auf manuelle
   Eingabe, falls Fuß/Rad benötigt wird.
-- Optional: Karten-Vorschau der Route (z. B. mit Leaflet + OpenStreetMap-Kacheln)
-  direkt auf der Seite.
+- Optional: Karten-Vorschau der **gesamten Route** direkt auf der Seite (aktuell
+  gibt es die Karte nur für die manuelle Positions-Wahl einzelner Haltepunkte).
 - Optional: Zusammenfassung/Export am Ende der Route (wo war man wie viel
   früher/später als geplant).
 

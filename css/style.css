@@ -138,6 +138,46 @@ table#stops-table input[type="number"]{
   background:none;border:none;color:var(--danger);cursor:pointer;font-size:1rem;padding:6px;
 }
 
+/* Zeile: Ort konnte nicht automatisch gefunden werden */
+table#stops-table tr.stop-not-found{
+  background:#fef2f2;
+}
+table#stops-table tr.stop-not-found td{
+  border-bottom-color:#fecaca;
+}
+table#stops-table tr.stop-not-found input[type="text"],
+table#stops-table tr.stop-not-found input[type="time"]{
+  border-color:#fca5a5;
+}
+.geo-fail-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:6px;
+  flex-wrap:wrap;
+}
+.geo-fail-label{
+  color:var(--danger);
+  font-size:.78rem;
+  font-weight:600;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+}
+.geo-manual-label{
+  color:var(--success-dark);
+  font-size:.78rem;
+  font-weight:600;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+}
+.btn-sm{
+  padding:6px 10px;
+  font-size:.78rem;
+  border-radius:8px;
+}
+
 .add-stop-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
 .add-stop-row input{
   flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;
@@ -305,8 +345,64 @@ table#stops-table input[type="number"]{
   margin:0 auto;
 }
 
+/* ---------- Karten-Auswahl-Dialog (manuelle Positions-Wahl) ---------- */
+.map-picker-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(15,23,42,.55);
+  z-index:100;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+}
+.map-picker-overlay.hidden{display:none;}
+.map-picker-box{
+  background:var(--card-bg);
+  border-radius:var(--radius);
+  max-width:640px;
+  width:100%;
+  max-height:92vh;
+  overflow:auto;
+  padding:20px 22px;
+  box-shadow:0 12px 40px rgba(15,23,42,.35);
+}
+.map-picker-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+}
+.map-picker-header h3{
+  margin:0;
+  font-size:1.05rem;
+  color:var(--primary-dark);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.map-picker-header .banner-close{
+  background:#f1f5f9;color:var(--muted);flex-shrink:0;
+}
+#map-picker-map{
+  width:100%;
+  height:360px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  margin-top:6px;
+  cursor:crosshair;
+}
+.map-picker-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  margin-top:14px;
+}
+
 @media (max-width:600px){
   .app-header h1{font-size:1.4rem;}
   .card{padding:18px;}
   table#stops-table th, table#stops-table td{padding:6px;}
+  #map-picker-map{height:300px;}
 }
