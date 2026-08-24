@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Routenplaner &amp; Live-Begleiter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1><i class="fa-solid fa-route"></i> Routenplaner &amp; Live-Begleiter</h1>
+  <p class="subtitle">Haltepunkte einlesen, Zeiten planen, Route starten – ich melde mich automatisch, wenn es Zeit ist.</p>
+</header>
+
+<main id="app">
+
+  <section id="import-section" class="card">
+    <h2><span class="step-badge">1</span> Route einlesen</h2>
+    <p class="hint">Öffne deine Route in Google Maps, tippe auf <strong>Teilen → Link kopieren</strong> und füge den Link hier ein. Es wird nur der Text des Links ausgewertet – kein Live-Zugriff auf Maps möglich. Bei Kurzlinks oder reinen Koordinaten bitte die Namen unten manuell ergänzen.</p>
+    <div class="import-row">
+      <input type="text" id="maps-url-input" placeholder="https://www.google.com/maps/dir/...">
+      <button id="parse-btn" class="btn btn-primary"><i class="fa-solid fa-magnifying-glass"></i> Einlesen</button>
+    </div>
+    <p id="parse-feedback" class="feedback"></p>
+  </section>
+
+  <section id="planning-section" class="card">
+    <h2><span class="step-badge">2</span> Zeitplanung je Haltepunkt</h2>
+    <p class="hint">Trage optional geplante Ankunft, Aufenthaltsdauer (Minuten) und/oder Abfahrtszeit ein. Du musst nicht alle Felder füllen – ich rechne mit dem, was vorhanden ist. Nutze den Button unten, um die Fahrzeiten zwischen den Haltepunkten automatisch berechnen zu lassen (basierend auf OpenStreetMap/OSRM) – daraus werden fehlende Ankunftszeiten automatisch vorgeschlagen.</p>
+
+    <div class="start-time-row">
+      <label for="route-start-time"><i class="fa-solid fa-flag-checkered"></i> Geplante Gesamt-Abfahrt (Start der Route)</label>
+      <input type="time" id="route-start-time">
+      <button id="apply-start-time-btn" class="btn btn-secondary"><i class="fa-solid fa-arrow-down"></i> Auf ersten Haltepunkt übernehmen</button>
+    </div>
+
+    <div id="stops-table-wrap">
+      <table id="stops-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Haltepunkt</th>
+            <th>Fahrzeit davor (Min)</th>
+            <th>Geplante Ankunft</th>
+            <th>Aufenthalt (Min)</th>
+            <th>Geplante Abfahrt</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="stops-tbody"></tbody>
+      </table>
+    </div>
+    <div class="add-stop-row">
+      <input type="text" id="new-stop-name" placeholder="Weiteren Haltepunkt hinzufügen …">
+      <button id="add-stop-btn" class="btn btn-secondary"><i class="fa-solid fa-plus"></i> Hinzufügen</button>
+    </div>
+    <div class="auto-calc-row">
+      <button id="auto-calc-btn" class="btn btn-secondary"><i class="fa-solid fa-car"></i> Fahrzeiten automatisch berechnen (OSRM)</button>
+      <span class="hint-inline">Nutzt OpenStreetMap/OSRM – Schätzung ohne Live-Verkehr, Autofahrt.</span>
+    </div>
+    <p id="auto-calc-feedback" class="feedback"></p>
+    <div class="planning-actions">
+      <label class="sound-toggle"><input type="checkbox" id="sound-toggle" checked> Ton bei Erinnerung</label>
+      <label class="sound-toggle"><input type="checkbox" id="gps-toggle"> <i class="fa-solid fa-location-crosshairs"></i> Standort-Erkennung (GPS) nutzen</label>
+      <button id="start-route-btn" class="btn btn-success"><i class="fa-solid fa-play"></i> Route starten</button>
+      <button id="reset-btn" class="btn btn-danger"><i class="fa-solid fa-rotate-left"></i> Zurücksetzen</button>
+    </div>
+
+    <div class="save-load-row">
+      <button id="save-json-btn" class="btn btn-secondary"><i class="fa-solid fa-floppy-disk"></i> Route als Datei speichern</button>
+      <button id="load-json-btn" class="btn btn-secondary"><i class="fa-solid fa-folder-open"></i> Route aus Datei laden</button>
+      <input type="file" id="load-json-input" accept="application/json,.json" class="hidden">
+      <span class="hint-inline">Speichert/lädt alle Haltepunkte, Zeiten und den Fortschritt als JSON-Datei auf deinem Gerät.</span>
+    </div>
+    <p id="save-load-feedback" class="feedback"></p>
+  </section>
+
+  <section id="live-banner" class="banner hidden" role="alert">
+    <span id="live-banner-text"></span>
+    <button id="live-banner-close" class="banner-close" aria-label="Schließen">&times;</button>
+  </section>
+
+  <section id="gps-suggestion" class="banner gps-banner hidden" role="alert">
+    <span id="gps-suggestion-text"></span>
+    <div class="gps-actions">
+      <button id="gps-confirm-btn" class="btn btn-success"><i class="fa-solid fa-check"></i> Ja, angekommen</button>
+      <button id="gps-dismiss-btn" class="btn btn-secondary">Noch nicht</button>
+    </div>
+  </section>
+
+  <section id="execution-section" class="card hidden">
+    <h2><span class="step-badge">3</span> Aktueller Haltepunkt</h2>
+    <p id="gps-status" class="hint-inline gps-status"></p>
+    <div id="current-stop-card"></div>
+  </section>
+
+  <section id="overview-section" class="card hidden">
+    <h2><i class="fa-solid fa-list-check"></i> Übersicht der Route</h2>
+    <ul id="overview-list"></ul>
+  </section>
+
+</main>
+
+<footer class="app-footer">
+  <p>Diese Seite läuft komplett lokal im Browser (keine Server-Verbindung). Für Erinnerungen und GPS-Erkennung muss dieser Tab geöffnet bleiben. Der Fortschritt wird lokal auf diesem Gerät gespeichert und kann zusätzlich als JSON-Datei exportiert werden.</p>
+</footer>
+
+<script src="js/app.js"></script>
+</body>
+</html>
