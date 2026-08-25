@@ -19,6 +19,12 @@ let state = {
 let gpsWatchId = null;
 let gpsLastSuggestedStopId = null; // verhindert wiederholtes Aufpoppen für denselben Halt nach "Noch nicht"
 
+// ---------- Routenkarte ----------
+let lastRouteGeometry = null; // Array von [lat, lon] entlang der von OSRM berechneten Fahrstrecke, oder null
+let routeMapLeaflet = null;   // Leaflet-Kartenobjekt der Routenkarte (einmalig erzeugt, dann wiederverwendet)
+let routeMapMarkers = [];     // aktuell auf der Routenkarte angezeigte Marker
+let routeMapLine = null;      // aktuell angezeigte Routen-Linie (Polyline)
+
 // ---------- Persistenz ----------
 
 function saveState() {
@@ -122,6 +128,9 @@ function makeStop(name) {
     geo: null,       // {lat, lon, displayName} - Ergebnis der letzten Geokodierung
     geoFailed: false, // true = automatische Adress-Suche hat diesen Ort NICHT gefunden (Zeile wird rot markiert)
     geoManual: false, // true = Position wurde von Hand auf der Karte gewählt (wird bei erneuter Berechnung nicht überschrieben)
+    geoSuspicious: false, // true = Ort wurde zwar gefunden, aber die berechnete Fahrzeit davor ist auffällig lang (Zeile wird orange markiert)
+    resolvedName: null,      // aufgelöster Ortsname (Reverse-Geocoding), falls das Namensfeld nur eine Koordinate enthält
+    resolvedNameFailed: false, // true = Reverse-Geocoding für die Koordinate im Namensfeld ist fehlgeschlagen
     planArr: '',
     planDur: '',
     planDep: '',
@@ -209,21 +218,65 @@ function renderStopsTable() {
     }
     if (stop.geoFailed) {
       tr.classList.add('stop-not-found');
+    } else if (stop.geoSuspicious) {
+      tr.classList.add('stop-suspicious');
     }
-    const nameCellExtra = stop.geoFailed
-      ? `<div class="geo-fail-row">
+    // Kurzer Textstatus unter dem Namen (nur Hinweis, kein Button mehr - der
+    // Karten-Zugriff ist jetzt über das kleine Karten-Icon in jeder Zeile
+    // möglich, unabhängig vom Status).
+    let nameCellExtra;
+    if (stop.geoFailed) {
+      nameCellExtra = `<div class="geo-fail-row">
            <span class="geo-fail-label"><i class="fa-solid fa-triangle-exclamation"></i> Ort nicht gefunden</span>
-           <button type="button" class="btn btn-secondary btn-sm pick-map-btn" data-pick-map="${stop.id}"><i class="fa-solid fa-map-location-dot"></i> Auf Karte wählen</button>
-         </div>`
-      : (stop.geoManual
-          ? `<div class="geo-fail-row">
+         </div>`;
+    } else if (stop.geoSuspicious) {
+      nameCellExtra = `<div class="geo-fail-row">
+           <span class="geo-suspicious-label"><i class="fa-solid fa-triangle-exclamation"></i> Auffällig lange Fahrzeit – Position prüfen</span>
+         </div>`;
+    } else if (stop.geoManual) {
+      nameCellExtra = `<div class="geo-fail-row">
                <span class="geo-manual-label"><i class="fa-solid fa-map-pin"></i> Position manuell gesetzt</span>
-               <button type="button" class="btn btn-secondary btn-sm pick-map-btn" data-pick-map="${stop.id}"><i class="fa-solid fa-map-location-dot"></i> Auf Karte ändern</button>
-             </div>`
-          : '');
+             </div>`;
+    } else {
+      nameCellExtra = '';
+    }
+
+    // Test-Spalte: zeigt die aktuell hinterlegte Koordinate im Klartext an,
+    // damit sich Geocoding-Ergebnisse direkt in der Tabelle nachvollziehen lassen.
+    let coordText;
+    if (stop.geo && typeof stop.geo.lat === 'number' && typeof stop.geo.lon === 'number') {
+      const src = stop.geoManual ? ' (manuell)' : '';
+      const cls = stop.geoSuspicious ? 'suspicious' : 'ok';
+      coordText = `<span class="coord-cell ${cls}">${stop.geo.lat.toFixed(5)}, ${stop.geo.lon.toFixed(5)}${src}</span>`;
+    } else if (stop.geoFailed) {
+      coordText = `<span class="coord-cell fail">– keine Koordinate –</span>`;
+    } else {
+      coordText = `<span class="coord-cell empty">– noch nicht berechnet –</span>`;
+    }
+    // Kleines Karten-Icon: IMMER anklickbar, unabhängig vom Status (normal,
+    // orange, rot) - so lässt sich jede Position jederzeit von Hand prüfen
+    // oder korrigieren, nicht nur bei einem erkannten Fehler.
+    const coordCell = `${coordText} <button type="button" class="map-icon-btn" data-pick-map="${stop.id}" title="Position auf Karte prüfen/setzen"><i class="fa-solid fa-map-location-dot"></i></button>`;
+
+    // Google-Maps-Links enthalten für frei gesetzte Pins oft nur "lat,lon"
+    // statt eines Ortsnamens. Falls zutreffend, wird - unterhalb des
+    // (unveränderten) Namensfelds - der per Reverse-Geocoding aufgelöste
+    // Klartext-Ortsname eingeblendet.
+    let resolvedNameRow = '';
+    if (parseCoordName(stop.name)) {
+      if (stop.resolvedName) {
+        resolvedNameRow = `<div class="resolved-name-row"><span class="coord-cell ok"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(stop.resolvedName)}</span></div>`;
+      } else if (stop.resolvedNameFailed) {
+        resolvedNameRow = `<div class="resolved-name-row"><span class="coord-cell fail">– Ortsname nicht auflösbar –</span></div>`;
+      } else {
+        resolvedNameRow = `<div class="resolved-name-row"><span class="coord-cell empty">– Ortsname wird ermittelt … –</span></div>`;
+      }
+    }
+
     tr.innerHTML = `
       <td class="row-num">${i + 1}</td>
-      <td><input type="text" data-field="name" data-id="${stop.id}" value="${escapeHtml(stop.name)}">${nameCellExtra}</td>
+      <td class="col-stopname"><input type="text" data-field="name" data-id="${stop.id}" value="${escapeHtml(stop.name)}">${nameCellExtra}${resolvedNameRow}</td>
+      <td>${coordCell}</td>
       <td class="travel-cell">${travelCell}</td>
       <td><input type="time" data-field="planArr" data-id="${stop.id}" value="${stop.planArr}"></td>
       <td><input type="text" inputmode="numeric" pattern="[0-9]*" data-field="planDur" data-id="${stop.id}" value="${stop.planDur}" placeholder="Min"></td>
@@ -232,6 +285,103 @@ function renderStopsTable() {
     `;
     tbody.appendChild(tr);
   });
+
+  updateStopsTotalsRow();
+}
+
+// Summiert die reine Fahrzeit (travelMin, ohne den Start-Haltepunkt) sowie die
+// geplante Aufenthaltszeit (planDur) über alle Haltepunkte und zeigt beides in
+// der Fußzeile der Tabelle im Format hh:mm an.
+function updateStopsTotalsRow() {
+  const travelEl = document.getElementById('totals-travel');
+  const stayEl = document.getElementById('totals-stay');
+  if (!travelEl || !stayEl) return;
+
+  let totalTravel = 0;
+  let totalStay = 0;
+  state.stops.forEach(stop => {
+    const t = parseInt(stop.travelMin, 10);
+    if (!isNaN(t)) totalTravel += t;
+    const d = parseInt(stop.planDur, 10);
+    if (!isNaN(d)) totalStay += d;
+  });
+
+  travelEl.textContent = totalTravel > 0 ? formatMinAsHHMM(totalTravel) : '–';
+  stayEl.textContent = totalStay > 0 ? formatMinAsHHMM(totalStay) : '–';
+}
+
+// ---------- Routenkarte (Anzeige nach erfolgreicher Fahrzeitberechnung) ----------
+//
+// Zeigt die komplette Route mit nummerierten Markern (in Haltepunkt-
+// Reihenfolge) und der von OSRM berechneten Fahrstrecke direkt zwischen der
+// Start-Zeit-Zeile und der Haltepunkt-Tabelle. Nutzt Leaflet + OpenStreetMap-
+// Kacheln (kostenlos, kein API-Key), genauso wie der Karten-Auswahl-Dialog.
+function renderRouteMap() {
+  const section = document.getElementById('route-map-section');
+  if (!section) return;
+
+  const stopsWithGeo = state.stops.filter(s => s.geo && typeof s.geo.lat === 'number' && typeof s.geo.lon === 'number');
+  if (stopsWithGeo.length < 2) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  // Karte erst beim ersten Anzeigen erzeugen (vorher war der Container
+  // "hidden" - eine Leaflet-Karte in einem unsichtbaren Container würde
+  // falsche Kachel-Maße berechnen).
+  if (!routeMapLeaflet) {
+    routeMapLeaflet = L.map('route-map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende'
+    }).addTo(routeMapLeaflet);
+  }
+  setTimeout(() => { if (routeMapLeaflet) routeMapLeaflet.invalidateSize(); }, 50);
+
+  // Bisherige Marker/Route entfernen, dann neu aufbauen.
+  routeMapMarkers.forEach(m => routeMapLeaflet.removeLayer(m));
+  routeMapMarkers = [];
+  if (routeMapLine) {
+    routeMapLeaflet.removeLayer(routeMapLine);
+    routeMapLine = null;
+  }
+
+  // Nummerierte Marker entsprechend der Reihenfolge in state.stops (nicht
+  // nur der gefilterten Liste), damit die Nummer immer der Zeilennummer in
+  // der Tabelle entspricht.
+  const bounds = [];
+  state.stops.forEach((stop, i) => {
+    if (!stop.geo || typeof stop.geo.lat !== 'number' || typeof stop.geo.lon !== 'number') return;
+    const color = stop.geoFailed ? '#dc2626' : (stop.geoSuspicious ? '#f59e0b' : '#2563eb');
+    const icon = L.divIcon({
+      className: 'route-map-num-icon',
+      html: `<span style="background:${color};">${i + 1}</span>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+    const marker = L.marker([stop.geo.lat, stop.geo.lon], { icon }).addTo(routeMapLeaflet);
+    marker.bindPopup(`<strong>${i + 1}. ${escapeHtml(stop.name)}</strong>`);
+    routeMapMarkers.push(marker);
+    bounds.push([stop.geo.lat, stop.geo.lon]);
+  });
+
+  // Fahrstrecke: wenn OSRM eine Geometrie geliefert hat, die tatsächliche
+  // Straßenroute zeichnen - sonst als Ersatz eine gerade Verbindungslinie
+  // zwischen den Haltepunkten.
+  const lineCoords = (lastRouteGeometry && lastRouteGeometry.length > 0) ? lastRouteGeometry : bounds;
+  routeMapLine = L.polyline(lineCoords, { color: '#2563eb', weight: 4, opacity: 0.75 }).addTo(routeMapLeaflet);
+
+  if (bounds.length > 0) {
+    routeMapLeaflet.fitBounds(bounds, { padding: [30, 30] });
+  }
+}
+
+// Wandelt eine Minutenzahl in "hh:mm" um (z. B. 125 -> "2:05").
+function formatMinAsHHMM(totalMin) {
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}:${String(m).padStart(2, '0')}`;
 }
 
 function escapeHtml(str) {
@@ -257,6 +407,10 @@ function bindPlanningEvents() {
     feedback.className = 'feedback ok';
     renderStopsTable();
     saveState();
+    // Falls Google Maps für einzelne Haltepunkte nur "lat,lon" statt eines
+    // Ortsnamens geliefert hat (frei gesetzte Pins), im Hintergrund den
+    // zugehörigen Ortsnamen per Reverse-Geocoding auflösen (nur zur Anzeige).
+    resolveCoordNames();
   });
 
   document.getElementById('add-stop-btn').addEventListener('click', () => {
@@ -475,6 +629,13 @@ function loadRouteFromFile(file) {
   reader.readAsText(file);
 }
 
+// Schwelle für die Plausibilitätsprüfung: Ist die berechnete Fahrzeit zu einem
+// Haltepunkt länger als dieser Wert, wird die Zeile orange markiert - auch
+// wenn eine Koordinate gefunden wurde, kann diese (z. B. bei gleichnamigen
+// Straßen/Orten) trotzdem völlig neben der eigentlichen Route liegen. Eine
+// unplausibel lange Fahrzeit ist dafür ein guter Hinweis.
+const SUSPICIOUS_TRAVEL_MIN = 120; // 2 Stunden
+
 // ---------- Fahrzeiten automatisch berechnen (Nominatim + OSRM, Open Source) ----------
 
 function sleep(ms) {
@@ -494,6 +655,73 @@ async function geocodeName(name) {
   const data = await res.json();
   if (!data || data.length === 0) return null;
   return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), displayName: data[0].display_name };
+}
+
+// ---------- Erkennung "Name ist eigentlich nur eine Koordinate" + Reverse-Geocoding ----------
+//
+// Google-Maps-Routenlinks enthalten für Haltepunkte ohne eigenen POI-Namen
+// (z. B. ein frei auf der Karte gesetzter Pin) nur die Koordinate als Text,
+// z. B. "56.4802236,-5.8082249". Das lässt sich klar von einem echten
+// Ortsnamen unterscheiden (zwei Zahlen mit Komma, kein Buchstabe).
+
+const COORD_NAME_REGEX = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
+
+function parseCoordName(name) {
+  if (!name) return null;
+  const m = String(name).match(COORD_NAME_REGEX);
+  if (!m) return null;
+  const lat = parseFloat(m[1]);
+  const lon = parseFloat(m[2]);
+  if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
+// Reverse-Geocoding: aus einer Koordinate einen lesbaren Ortsnamen ermitteln
+// (Nominatim, derselbe kostenlose Dienst wie beim normalen Geocoding - nur
+// mit umgekehrter Richtung).
+async function reverseGeocode(lat, lon) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=16`;
+  let res;
+  try {
+    res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  } catch (networkErr) {
+    throw new Error('NETWORK: ' + networkErr.message);
+  }
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' von Nominatim');
+  const data = await res.json();
+  if (!data || !data.display_name) return null;
+  return data.display_name;
+}
+
+// Löst für alle Haltepunkte, deren Namensfeld nur eine Koordinate enthält,
+// per Reverse-Geocoding einen lesbaren Ortsnamen auf (füllt "resolvedName").
+// Das Namensfeld selbst bleibt dabei unverändert - der aufgelöste Name wird
+// zusätzlich in einer eigenen Tabellenspalte angezeigt.
+async function resolveCoordNames() {
+  const feedback = document.getElementById('auto-calc-feedback');
+  const candidates = state.stops.filter(s => parseCoordName(s.name) && !s.resolvedName);
+  if (candidates.length === 0) return;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const stop = candidates[i];
+    const coord = parseCoordName(stop.name);
+    if (feedback) feedback.textContent = `Löse Ortsnamen für Koordinate ${i + 1}/${candidates.length} auf …`;
+    try {
+      const displayName = await reverseGeocode(coord.lat, coord.lon);
+      if (displayName) {
+        stop.resolvedName = displayName;
+        stop.resolvedNameFailed = false;
+      } else {
+        stop.resolvedNameFailed = true;
+      }
+    } catch (e) {
+      stop.resolvedNameFailed = true;
+    }
+    renderStopsTable();
+    saveState();
+    // Nominatim-Nutzungsrichtlinie: max. ca. 1 Anfrage/Sekunde
+    if (i < candidates.length - 1) await sleep(1100);
+  }
 }
 
 // Deutsche Länderbezeichnungen, wie sie Google Maps oft in Adressen einsetzt,
@@ -608,7 +836,20 @@ async function calcTravelTimes() {
     // suchen/überschreiben - die Koordinate bleibt bestehen.
     if (stop.geoManual && stop.geo) {
       stop.geoFailed = false;
+      stop.geoSuspicious = false; // manuell gesetzte Positionen gelten als geprüft
       coords.push(stop.geo);
+      continue;
+    }
+
+    // Google-Maps-Links liefern für frei gesetzte Pins (statt benannter Orte)
+    // oft nur "lat,lon" als Namen. Eine Text-Suche danach bei Nominatim ist
+    // unzuverlässig - stattdessen die Koordinate direkt verwenden.
+    const directCoord = parseCoordName(stop.name);
+    if (directCoord) {
+      stop.geo = directCoord;
+      stop.geoFailed = false;
+      stop.geoSuspicious = false;
+      coords.push(directCoord);
       continue;
     }
 
@@ -618,11 +859,13 @@ async function calcTravelTimes() {
       const result = await geocodeWithFallback(stop.name);
       if (!result) {
         stop.geoFailed = true;
+        stop.geoSuspicious = false;
         failed.push(stop.name);
         coords.push(null);
       } else {
         stop.geo = result.geo;
         stop.geoFailed = false;
+        stop.geoSuspicious = false; // wird unten nach der Fahrzeit-Berechnung ggf. neu gesetzt
         coords.push(result.geo);
         if (result.variantIndex > 0) {
           simplified.push(`${stop.name.split(',')[0].trim()} → "${result.usedQuery}"`);
@@ -661,7 +904,10 @@ async function calcTravelTimes() {
 
   try {
     const coordStr = coords.map(c => `${c.lon},${c.lat}`).join(';');
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=false`;
+    // overview=full + geometries=geojson liefert zusätzlich die komplette
+    // Straßen-Geometrie der Route (für die Kartenanzeige unten), nicht nur
+    // die Fahrzeiten/Distanzen je Etappe.
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
     let res;
     try {
       res = await fetch(url);
@@ -675,25 +921,55 @@ async function calcTravelTimes() {
     }
     const legs = data.routes[0].legs;
     let totalMin = 0, totalKm = 0;
+    const suspicious = [];
     for (let i = 0; i < legs.length; i++) {
       const mins = Math.max(1, Math.round(legs[i].duration / 60));
       const km = legs[i].distance / 1000;
-      state.stops[i + 1].travelMin = String(mins);
-      state.stops[i + 1].travelKm = km;
+      const targetStop = state.stops[i + 1];
+      targetStop.travelMin = String(mins);
+      targetStop.travelKm = km;
+      // Plausibilitätsprüfung: Auch eine "gefundene" Koordinate kann komplett
+      // neben der eigentlichen Route liegen (z. B. gleichnamige Adresse in
+      // einer anderen Stadt) - eine unplausibel lange Fahrzeit davor ist
+      // dafür ein deutliches Warnsignal, unabhängig vom geoFailed-Status.
+      targetStop.geoSuspicious = !targetStop.geoManual && mins > SUSPICIOUS_TRAVEL_MIN;
+      if (targetStop.geoSuspicious) suspicious.push(targetStop.name);
       totalMin += mins;
       totalKm += km;
     }
     applyTravelSuggestions();
     renderStopsTable();
     saveState();
+
+    // Route-Geometrie (Straßenverlauf) + Haltepunkt-Koordinaten für die
+    // Kartenanzeige unterhalb der Start-Zeit merken und Karte aktualisieren.
+    // Bewusst in einem eigenen try/catch: Falls die Geometrie aus irgendeinem
+    // Grund unerwartet aufgebaut ist, soll das die bereits erfolgreich
+    // berechneten Fahrzeiten/Ankünfte nicht nachträglich als "Fehler" melden -
+    // die Karte fällt dann einfach auf gerade Verbindungslinien zurück.
+    try {
+      const geom = data.routes[0].geometry;
+      lastRouteGeometry = (geom && geom.type === 'LineString' && Array.isArray(geom.coordinates) && geom.coordinates.length > 0)
+        ? geom.coordinates.map(c => [c[1], c[0]]) // GeoJSON liefert [lon,lat] -> Leaflet will [lat,lon]
+        : null;
+    } catch (geomErr) {
+      lastRouteGeometry = null;
+    }
+    renderRouteMap();
+
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     let msg = `Fertig: ca. ${Math.round(totalKm)} km, ${h > 0 ? h + ' Std ' : ''}${m} Min reine Fahrzeit (Schätzung ohne Live-Verkehr). Leere Ankunftszeiten wurden automatisch vorgeschlagen – bitte prüfen und bei Bedarf anpassen.`;
     if (simplified.length > 0) {
       msg += ` Hinweis: Bei folgenden Haltepunkten wurde die genaue Adresse nicht gefunden, stattdessen ein vereinfachter Suchbegriff verwendet (bitte Position bei Bedarf prüfen): ${simplified.join(' · ')}.`;
     }
+    if (suspicious.length > 0) {
+      msg += ` ⚠️ Auffällig lange Fahrzeit (über ${SUSPICIOUS_TRAVEL_MIN / 60} Std, orange markiert) vor: ${suspicious.join(', ')} – die gefundene Position liegt hier vermutlich neben der eigentlichen Route. Bitte über "Auf Karte wählen" prüfen/korrigieren.`;
+      feedback.className = 'feedback warn';
+    } else {
+      feedback.className = 'feedback ok';
+    }
     feedback.textContent = msg;
-    feedback.className = 'feedback ok';
   } catch (e) {
     feedback.textContent = 'Fahrzeit-Berechnung fehlgeschlagen: ' + e.message + '. Bitte später erneut versuchen oder Fahrzeiten manuell eintragen.';
     feedback.className = 'feedback error';
@@ -1101,6 +1377,14 @@ function openMapPicker(stop) {
   document.getElementById('map-picker-save-btn').disabled = !mapPickerCoords;
   document.getElementById('map-picker-overlay').classList.remove('hidden');
 
+  // Sucheingabe zurücksetzen - mit dem Namen des Haltepunkts vorbefüllen,
+  // damit man direkt "Suchen" klicken kann, ohne den Namen erneut eintippen zu müssen.
+  const searchInput = document.getElementById('map-picker-search-input');
+  searchInput.value = stop.name || '';
+  const searchFeedback = document.getElementById('map-picker-search-feedback');
+  searchFeedback.textContent = '';
+  searchFeedback.className = 'feedback';
+
   // Start-Ansicht: vorhandene Position > Position eines Nachbar-Haltepunkts > Europa-Übersicht
   const fallback = findNearestKnownGeo(stop);
   const startLat = mapPickerCoords ? mapPickerCoords.lat : (fallback ? fallback.lat : 47.0);
@@ -1155,12 +1439,65 @@ function closeMapPicker() {
   mapPickerCoords = null;
 }
 
+// Sucht einen Ort/eine Adresse über Nominatim und springt im Karten-Dialog
+// dorthin, damit die Feinjustierung (Klick/Marker verschieben) auf einem
+// bereits sinnvoll zentrierten Kartenausschnitt stattfinden kann - nützlich
+// z. B. um von einem falsch gefundenen Ort zunächst zur richtigen Stadt/
+// Region zu springen und dann die genaue Position exakt zu setzen.
+async function searchMapPickerLocation() {
+  const input = document.getElementById('map-picker-search-input');
+  const searchFeedback = document.getElementById('map-picker-search-feedback');
+  const searchBtn = document.getElementById('map-picker-search-btn');
+  const query = input.value.trim();
+  if (!query) {
+    searchFeedback.textContent = 'Bitte einen Suchbegriff eingeben.';
+    searchFeedback.className = 'feedback error';
+    return;
+  }
+
+  const originalHtml = searchBtn.innerHTML;
+  searchBtn.disabled = true;
+  searchBtn.innerHTML = '<span class="geo-spinner"></span> Suche …';
+  searchFeedback.textContent = '';
+  searchFeedback.className = 'feedback';
+
+  try {
+    const geo = await geocodeName(query);
+    if (!geo) {
+      searchFeedback.textContent = `„${query}“ wurde nicht gefunden. Bitte anders formulieren (z. B. Ort/Land ergänzen) oder direkt auf die Karte klicken.`;
+      searchFeedback.className = 'feedback error';
+      return;
+    }
+    mapPickerLeaflet.setView([geo.lat, geo.lon], 14);
+    setMapPickerPosition(geo.lat, geo.lon);
+    searchFeedback.textContent = `Gefunden: ${geo.displayName}. Bitte prüfen und bei Bedarf den Marker noch feinjustieren, dann „Position übernehmen“ klicken.`;
+    searchFeedback.className = 'feedback ok';
+  } catch (e) {
+    const isNetwork = String(e.message).startsWith('NETWORK:');
+    searchFeedback.textContent = isNetwork
+      ? 'Die Adress-Suche konnte nicht erreicht werden (Netzwerkproblem). Bitte später erneut versuchen oder direkt auf die Karte klicken.'
+      : 'Suche fehlgeschlagen: ' + e.message;
+    searchFeedback.className = 'feedback error';
+  } finally {
+    searchBtn.disabled = false;
+    searchBtn.innerHTML = originalHtml;
+  }
+}
+
 function bindMapPickerEvents() {
   document.getElementById('map-picker-close-btn').addEventListener('click', closeMapPicker);
   document.getElementById('map-picker-cancel-btn').addEventListener('click', closeMapPicker);
 
   document.getElementById('map-picker-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'map-picker-overlay') closeMapPicker(); // Klick auf den dunklen Hintergrund
+  });
+
+  document.getElementById('map-picker-search-btn').addEventListener('click', searchMapPickerLocation);
+  document.getElementById('map-picker-search-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchMapPickerLocation();
+    }
   });
 
   document.getElementById('map-picker-save-btn').addEventListener('click', () => {
@@ -1172,6 +1509,7 @@ function bindMapPickerEvents() {
       displayName: 'Manuell auf Karte gewählt'
     };
     mapPickerStop.geoFailed = false;
+    mapPickerStop.geoSuspicious = false;
     mapPickerStop.geoManual = true;
     saveState();
     renderStopsTable();
@@ -1179,6 +1517,12 @@ function bindMapPickerEvents() {
     const feedback = document.getElementById('auto-calc-feedback');
     feedback.textContent = `Position für "${stopName}" wurde von Hand gesetzt. Bitte "Fahrzeiten automatisch berechnen" erneut ausführen, damit die Fahrzeiten mit der neuen Position aktualisiert werden.`;
     feedback.className = 'feedback ok';
+    // Die zuvor berechnete Fahrstrecken-Geometrie passt nicht mehr genau zur
+    // neuen Position - Karte trotzdem aktualisieren (Marker-Position stimmt
+    // sofort, die Linie fällt bis zur nächsten Berechnung auf eine gerade
+    // Verbindung zwischen den Haltepunkten zurück).
+    lastRouteGeometry = null;
+    renderRouteMap();
   });
 }
 
@@ -1211,6 +1555,11 @@ function applyStateToUI() {
     document.getElementById('overview-section').classList.add('hidden');
     document.getElementById('gps-suggestion').classList.add('hidden');
     renderStopsTable();
+    // Die genaue Straßen-Geometrie wird nicht dauerhaft gespeichert - nach
+    // einem Neuladen der Seite zeigt die Karte (falls bereits Koordinaten
+    // vorhanden sind) daher zunächst gerade Verbindungslinien zwischen den
+    // Haltepunkten, bis erneut "Fahrzeiten automatisch berechnen" genutzt wird.
+    renderRouteMap();
   }
 }
 

@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
@@ -39,12 +39,19 @@
       <button id="apply-start-time-btn" class="btn btn-secondary"><i class="fa-solid fa-arrow-down"></i> Auf ersten Haltepunkt übernehmen</button>
     </div>
 
+    <section id="route-map-section" class="hidden">
+      <h3><i class="fa-solid fa-map"></i> Route auf der Karte</h3>
+      <p class="hint">Nummerierte Marker entsprechen der Reihenfolge der Haltepunkte. Die Linie zeigt die von OSRM berechnete Fahrstrecke. Zum Vergrößern/Verschieben die Karte wie gewohnt bedienen.</p>
+      <div id="route-map"></div>
+    </section>
+
     <div id="stops-table-wrap">
       <table id="stops-table">
         <thead>
           <tr>
             <th>#</th>
-            <th>Haltepunkt</th>
+            <th class="col-stopname">Haltepunkt</th>
+            <th>Koordinate (Test)</th>
             <th>Fahrzeit davor (Min)</th>
             <th>Geplante Ankunft</th>
             <th>Aufenthalt (Min)</th>
@@ -53,6 +60,18 @@
           </tr>
         </thead>
         <tbody id="stops-tbody"></tbody>
+        <tfoot>
+          <tr id="stops-totals-row">
+            <td></td>
+            <td class="totals-label">Total</td>
+            <td></td>
+            <td id="totals-travel" class="totals-value"></td>
+            <td></td>
+            <td id="totals-stay" class="totals-value"></td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
     <div class="add-stop-row">
@@ -113,6 +132,11 @@
       <button id="map-picker-close-btn" class="banner-close" aria-label="Schließen">&times;</button>
     </div>
     <p class="hint">Klicke auf die Karte, um die genaue Position dieses Haltepunkts zu markieren, oder verschiebe den Marker. Die Karte startet in der Nähe eines bereits gefundenen Nachbar-Haltepunkts, falls vorhanden.</p>
+    <div class="map-picker-search-row">
+      <input type="text" id="map-picker-search-input" placeholder="Ort suchen (z. B. Stadt, Adresse) …">
+      <button id="map-picker-search-btn" class="btn btn-secondary"><i class="fa-solid fa-magnifying-glass"></i> Suchen</button>
+    </div>
+    <p id="map-picker-search-feedback" class="feedback"></p>
     <div id="map-picker-map"></div>
     <p id="map-picker-feedback" class="feedback"></p>
     <div class="map-picker-actions">
@@ -127,6 +151,6 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="js/app.js?v=2"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

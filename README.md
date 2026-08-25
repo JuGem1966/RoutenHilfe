@@ -53,18 +53,89 @@ werden – über die kostenlosen Open-Source-Dienste **Nominatim** (Geocoding) u
      Vorschau-Umgebung) werden von „Adresse nicht gefunden" unterschieden.
    - Fahrzeiten können jederzeit auch manuell eingetragen/korrigiert werden
      (z. B. bei bekanntem Stau oder abweichender Einschätzung)
-   - **Nicht gefundene Orte rot markiert + Position auf Karte wählen**: Konnte
-     ein Haltepunkt auch nach allen Fallback-Varianten nicht automatisch
-     gefunden werden, wird die Tabellenzeile rot markiert und ein Button
-     „Auf Karte wählen“ angezeigt. Ein Klick öffnet einen Kartendialog
-     (Leaflet + OpenStreetMap-Kacheln, kostenlos, kein API-Key), der sich
-     automatisch in der Nähe eines bereits gefundenen Nachbar-Haltepunkts
-     zentriert. Per Klick (oder Ziehen des Markers) wird die gewünschte
-     Position markiert und mit „Position übernehmen“ gespeichert – die Zeile
-     wechselt danach zu einem grünen Hinweis „Position manuell gesetzt“ mit
-     der Möglichkeit, die Position jederzeit erneut zu ändern. Die so gesetzte
-     Koordinate fließt normal in die OSRM-Fahrzeitberechnung ein und wird bei
-     erneuter automatischer Berechnung nicht überschrieben.
+   - **Position jederzeit auf der Karte prüfen/korrigieren**: Neben der
+     Koordinaten-Anzeige jedes Haltepunkts gibt es ein kleines Karten-Icon
+     (📍), das **immer** anklickbar ist – unabhängig davon, ob die Zeile
+     normal, orange oder rot markiert ist. So lässt sich auch ein Ort
+     korrigieren, der zwar „normal“ aussieht, aber in Wirklichkeit falsch
+     platziert ist (z. B. wenn erst ein späterer Haltepunkt durch eine
+     unplausible Fahrzeit auffällt, tatsächlich aber ein früherer Ort falsch
+     lag). Ein Klick öffnet einen Kartendialog (Leaflet + OpenStreetMap-
+     Kacheln, kostenlos, kein API-Key), der sich automatisch in der Nähe
+     einer bereits bekannten Position zentriert. Im Dialog steht zusätzlich
+     ein **Suchfeld** zur Verfügung (vorbefüllt mit dem Namen des
+     Haltepunkts): Eingabe eines Orts/einer Adresse + „Suchen“ springt die
+     Karte automatisch zur gefundenen Position (per Nominatim) – die genaue
+     Stelle lässt sich danach durch Klick oder Ziehen des Markers noch
+     feinjustieren. Mit „Position übernehmen“ wird die Koordinate
+     gespeichert – die Zeile wechselt danach zu einem grünen Hinweis
+     „Position manuell gesetzt“. Die so gesetzte Koordinate fließt normal in
+     die OSRM-Fahrzeitberechnung ein und wird bei erneuter automatischer
+     Berechnung nicht überschrieben.
+   - **Test-Spalte „Koordinate (Test)“**: Zeigt zu Diagnose-Zwecken direkt in
+     der Tabelle die aktuell hinterlegte Koordinate jedes Haltepunkts im
+     Klartext an (grün = gefunden, orange = gefunden, aber auffällig lange
+     Fahrzeit (siehe unten), rot = keine Koordinate/Ort nicht gefunden,
+     grau = noch nicht berechnet). Damit lässt sich sofort nachvollziehen,
+     was Schritt 2 (Geocoding) tatsächlich ermittelt hat, bevor Schritt 3
+     (Routing) darauf aufbaut.
+   - **Plausibilitätsprüfung „auffällig lange Fahrzeit“ (orange markiert)**:
+     Ein Ort kann von Nominatim technisch „gefunden“ werden, aber trotzdem
+     komplett neben der eigentlichen Route liegen – z. B. wenn eine
+     Adresse ohne Ortsangabe (nur Straßenname) mehrdeutig ist und in einer
+     völlig anderen Stadt/Region aufgelöst wird. Das lässt sich am
+     Geocoding-Ergebnis allein nicht erkennen, wohl aber an der daraus
+     berechneten Fahrzeit: Ist die Fahrzeit zu einem Haltepunkt länger als
+     2 Stunden, wird die Zeile orange markiert (Warnhinweis „Auffällig
+     lange Fahrzeit – Position prüfen“) – die Position lässt sich wie bei
+     jedem anderen Haltepunkt über das Karten-Icon direkt korrigieren.
+     Diese Prüfung läuft automatisch nach jeder Fahrzeitberechnung,
+     zusätzlich zur bereits bestehenden „nicht gefunden“-Erkennung.
+   - **Aufgelöster Ortsname bei reinen Koordinaten**: Manche Google-Maps-
+     Routen enthalten für frei auf der Karte gesetzte Pins (statt benannter
+     Orte) im Link nur eine reine Koordinate (z. B. „56.4802236,-5.8082249“)
+     statt eines Namens – obwohl die Routenliste in Google Maps selbst
+     einen Namen anzeigt. Beim Einlesen landet dann diese Koordinate
+     unverändert im Namensfeld. Damit trotzdem klar ist, wo sich der Ort
+     befindet, wird direkt **unterhalb** des (unveränderten) Namensfelds
+     automatisch der per **Reverse-Geocoding** (Nominatim) ermittelte
+     Klartext-Ortsname eingeblendet (grün), sobald das Namensfeld als reine
+     Koordinate erkannt wird. Ist die Auflösung (noch) nicht möglich,
+     erscheint „– Ortsname nicht auflösbar –“ (rot) bzw. „– Ortsname wird
+     ermittelt … –“ (grau) während der Anfrage läuft. Bei „normalen“ Namen
+     erscheint gar kein Zusatztext. Zusätzlich wird eine solche Koordinate
+     direkt als Position verwendet (keine unzuverlässige Text-Suche danach
+     nötig), was die Genauigkeit dieser Haltepunkte sogar verbessert.
+   - **Spaltenbreite „Haltepunkt“**: Die Haltepunkt-Spalte ist deutlich
+     breiter als die übrigen Spalten (ca. doppelt so breit), damit Name und
+     ggf. aufgelöster Ortsname gut lesbar untereinander Platz haben.
+   - **Summenzeile am Tabellenende**: Am Ende der Haltepunkt-Tabelle zeigt
+     eine „Total“-Fußzeile die Summe der reinen Fahrzeit (alle „Fahrzeit
+     davor“-Werte) sowie die Summe der geplanten Aufenthaltszeiten – jeweils
+     im Format hh:mm (z. B. „5:05“ für 305 Minuten). So lässt sich auf einen
+     Blick erkennen, wie viel der Gesamtreise auf reines Fahren bzw. auf
+     Aufenthalte entfällt.
+   - **Route auf der Karte**: Direkt zwischen der „Geplante Gesamt-Abfahrt“-
+     Zeile und der Haltepunkt-Tabelle erscheint automatisch eine Karte
+     (Leaflet + OpenStreetMap-Kacheln, kostenlos, kein API-Key), sobald
+     mindestens zwei Haltepunkte eine Koordinate haben. Sie zeigt:
+     - **Nummerierte Marker** in der Reihenfolge der Haltepunkte (1, 2, 3 …,
+       identisch zur Zeilennummer in der Tabelle), farblich passend zum
+       Zeilenstatus (blau = normal, orange = auffällige Fahrzeit, rot =
+       nicht gefunden). Ein Klick auf einen Marker zeigt den Namen des
+       Haltepunkts in einem Popup.
+     - Die **tatsächliche Fahrstrecke** als Linie, sobald „Fahrzeiten
+       automatisch berechnen“ ausgeführt wurde (OSRM liefert dafür die
+       reale Straßen-Geometrie); vorher bzw. nach einer manuellen
+       Positions-Korrektur wird ersatzweise eine gerade Verbindungslinie
+       zwischen den Haltepunkten gezeigt, bis erneut berechnet wird.
+     - Die Karte ist **direkt eingebettet** (kein Klick/Popup zum Öffnen
+       nötig) und normal mit Zoom/Verschieben bedienbar – das ermöglicht
+       eine schnelle visuelle Plausibilitätsprüfung der gesamten Route,
+       ohne einen zusätzlichen Dialog öffnen zu müssen. Die genaue
+       Straßen-Geometrie wird nicht dauerhaft gespeichert (nur die
+       Koordinaten der Haltepunkte); nach einem Neuladen der Seite zeigt
+       die Karte bis zur nächsten Berechnung daher zunächst gerade Linien.
 
 3. **Route starten & Live-Begleitung**
    - Ankunfts-Kommentar: „n Minuten früher/später als geplant"
@@ -137,6 +208,9 @@ ohne Unterseiten oder URL-Parameter.
       geo,         // { lat, lon, displayName } – Ergebnis der letzten Geokodierung (auch bei manueller Kartenwahl)
       geoFailed,   // true = automatische Adress-Suche hat diesen Ort nicht gefunden (rote Zeile)
       geoManual,   // true = Position wurde von Hand auf der Karte gewählt
+      geoSuspicious,     // true = Fahrzeit zu diesem Halt > 2 Std., Position sollte geprüft werden (orange Zeile)
+      resolvedName,       // per Reverse-Geocoding ermittelter Klartext-Ortsname, nur wenn der Name eine reine Koordinate ist
+      resolvedNameFailed, // true = Reverse-Geocoding für diese Koordinate ist fehlgeschlagen
       planArr, planDur, planDep,   // geplante Zeiten
       actualArr, actualDep,        // tatsächliche Zeiten
       status       // 'pending' | 'arrived' | 'departed'

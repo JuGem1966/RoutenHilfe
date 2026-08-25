@@ -106,6 +106,7 @@ main#app{
 .feedback{font-size:.88rem;margin:12px 0 0;min-height:1.2em;}
 .feedback.ok{color:var(--success-dark);}
 .feedback.error{color:var(--danger);}
+.feedback.warn{color:#b45309;}
 
 #stops-table-wrap{overflow-x:auto;}
 table#stops-table{width:100%;border-collapse:collapse;margin-top:4px;}
@@ -123,6 +124,15 @@ table#stops-table td{
   border-bottom:1px solid var(--border);
   vertical-align:middle;
 }
+/* Haltepunkt-Spalte (Name + ggf. aufgelöster Ortsname darunter) etwa doppelt
+   so breit wie die übrigen Spalten. */
+table#stops-table th.col-stopname,
+table#stops-table td.col-stopname{
+  width:26%;
+  min-width:220px;
+}
+.resolved-name-row{margin-top:6px;}
+.resolved-name-row .coord-cell{white-space:normal;}
 table#stops-table input[type="text"],
 table#stops-table input[type="time"],
 table#stops-table input[type="number"]{
@@ -134,6 +144,29 @@ table#stops-table input[type="number"]{
   font-size:.9rem;
 }
 .row-num{color:var(--muted);font-weight:600;font-size:.85rem;}
+
+/* Fußzeile der Haltepunkt-Tabelle: Summe reine Fahrzeit + Aufenthaltszeit */
+table#stops-table tfoot tr#stops-totals-row{
+  border-top:2px solid var(--border);
+}
+table#stops-table tfoot td{
+  padding:10px 10px;
+  border-bottom:none;
+  font-size:.85rem;
+}
+.totals-label{
+  font-weight:700;
+  color:var(--text);
+  text-transform:uppercase;
+  font-size:.78rem;
+  letter-spacing:.03em;
+}
+.totals-value{
+  font-weight:700;
+  color:var(--primary-dark);
+  font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  font-size:.95rem;
+}
 .remove-row-btn{
   background:none;border:none;color:var(--danger);cursor:pointer;font-size:1rem;padding:6px;
 }
@@ -148,6 +181,27 @@ table#stops-table tr.stop-not-found td{
 table#stops-table tr.stop-not-found input[type="text"],
 table#stops-table tr.stop-not-found input[type="time"]{
   border-color:#fca5a5;
+}
+
+/* Zeile: Ort wurde gefunden, aber die Fahrzeit davor ist unplausibel lang -
+   die Koordinate liegt vermutlich neben der eigentlichen Route */
+table#stops-table tr.stop-suspicious{
+  background:#fff7ed;
+}
+table#stops-table tr.stop-suspicious td{
+  border-bottom-color:#fed7aa;
+}
+table#stops-table tr.stop-suspicious input[type="text"],
+table#stops-table tr.stop-suspicious input[type="time"]{
+  border-color:#fdba74;
+}
+.geo-suspicious-label{
+  color:var(--warn);
+  font-size:.78rem;
+  font-weight:600;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
 }
 .geo-fail-row{
   display:flex;
@@ -178,6 +232,38 @@ table#stops-table tr.stop-not-found input[type="time"]{
   border-radius:8px;
 }
 
+/* Test-Spalte: Koordinaten-Anzeige je Haltepunkt */
+.coord-cell{
+  font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  font-size:.78rem;
+  white-space:nowrap;
+}
+.coord-cell.ok{color:var(--success-dark);}
+.coord-cell.suspicious{color:var(--warn);font-weight:600;}
+.coord-cell.fail{color:var(--danger);font-weight:600;}
+.coord-cell.empty{color:var(--muted);font-style:italic;}
+
+/* Kleines Karten-Icon: immer sichtbar/anklickbar, egal ob Position normal,
+   auffällig oder nicht gefunden ist - erlaubt jederzeit die manuelle Wahl/
+   Korrektur der Position auf der Karte. */
+.map-icon-btn{
+  background:#eff6ff;
+  color:var(--primary-dark);
+  border:1px solid #bfdbfe;
+  border-radius:7px;
+  width:26px;
+  height:26px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  font-size:.78rem;
+  vertical-align:middle;
+  margin-left:4px;
+  flex-shrink:0;
+}
+.map-icon-btn:hover{background:#dbeafe;}
+
 .add-stop-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
 .add-stop-row input{
   flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;
@@ -207,6 +293,40 @@ table#stops-table tr.stop-not-found input[type="time"]{
   border:1px solid var(--border);
   border-radius:8px;
   font-size:.95rem;
+}
+
+/* ---------- Routenkarte (direkt eingebettet, nach Fahrzeit-Berechnung) ---------- */
+#route-map-section{
+  margin-bottom:18px;
+}
+#route-map-section h3{
+  margin:0 0 4px;
+  font-size:1rem;
+  color:var(--primary-dark);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+#route-map-section .hint{margin:4px 0 10px;}
+#route-map{
+  width:100%;
+  height:380px;
+  border-radius:12px;
+  border:1px solid var(--border);
+}
+/* Nummerierte Marker-Icons auf der Routenkarte (Leaflet divIcon) */
+.route-map-num-icon span{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  color:#fff;
+  font-weight:700;
+  font-size:.85rem;
+  box-shadow:0 2px 6px rgba(15,23,42,.4);
+  border:2px solid #fff;
 }
 
 .auto-calc-row{
@@ -385,6 +505,20 @@ table#stops-table tr.stop-not-found input[type="time"]{
 .map-picker-header .banner-close{
   background:#f1f5f9;color:var(--muted);flex-shrink:0;
 }
+.map-picker-search-row{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+  flex-wrap:wrap;
+}
+.map-picker-search-row input{
+  flex:1;
+  min-width:180px;
+  padding:9px 12px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  font-size:.9rem;
+}
 #map-picker-map{
   width:100%;
   height:360px;
@@ -405,4 +539,5 @@ table#stops-table tr.stop-not-found input[type="time"]{
   .card{padding:18px;}
   table#stops-table th, table#stops-table td{padding:6px;}
   #map-picker-map{height:300px;}
+  #route-map{height:280px;}
 }
