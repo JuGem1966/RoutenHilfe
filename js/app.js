@@ -331,7 +331,12 @@ function renderRouteMap() {
   // "hidden" - eine Leaflet-Karte in einem unsichtbaren Container würde
   // falsche Kachel-Maße berechnen).
   if (!routeMapLeaflet) {
-    routeMapLeaflet = L.map('route-map');
+    // preferCanvas: true lässt Leaflet die Routen-Linie auf einem
+    // <canvas>-Element statt als SVG zeichnen. Das ist wichtig für den
+    // PDF-Export (html2canvas): SVG-Ebenen werden von html2canvas bekanntlich
+    // manchmal leicht versetzt zu den Kartenkacheln eingefangen, ein
+    // <canvas>-Element dagegen pixelgenau wie angezeigt.
+    routeMapLeaflet = L.map('route-map', { preferCanvas: true });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende'

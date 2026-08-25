@@ -189,6 +189,11 @@ werden – über die kostenlosen Open-Source-Dienste **Nominatim** (Geocoding) u
      ein PDF erzeugt – nur mit der Tabelle und einem entsprechenden
      Hinweistext anstelle der Karte. Der Export schlägt also nie komplett
      fehl.
+   - Die Routenkarte zeichnet die Fahrstrecke bewusst auf einem
+     `<canvas>`-Element statt als SVG (`preferCanvas: true`), damit die
+     Linie im PDF-Bild exakt an der richtigen Stelle über den Kartenkacheln
+     liegt – SVG-Ebenen werden vom verwendeten Bild-Werkzeug (html2canvas)
+     sonst gelegentlich leicht versetzt eingefangen.
 
 ## Verwendete externe Dienste (alle kostenlos, ohne API-Key)
 
