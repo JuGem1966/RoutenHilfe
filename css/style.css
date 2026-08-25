@@ -423,6 +423,16 @@ table#stops-table tr.stop-suspicious input[type="time"]{
 
 .hidden{display:none !important;}
 
+.execution-header-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:6px;
+}
+.execution-header-row h2{margin:0;}
+
 #current-stop-card{
   border:1px solid var(--border);
   border-radius:12px;

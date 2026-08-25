@@ -525,6 +525,27 @@ function bindPlanningEvents() {
 
   document.getElementById('start-route-btn').addEventListener('click', startRoute);
 
+  // Zwischen Live-Ansicht (Schritt 3) und der Planungsseite hin- und
+  // herwechseln, ohne die laufende Route zu beenden oder Daten zu verlieren -
+  // "routeStarted" bleibt dabei unverändert, es wird nur umgeschaltet,
+  // welcher Bereich sichtbar ist.
+  document.getElementById('back-to-planning-btn').addEventListener('click', () => {
+    document.getElementById('execution-section').classList.add('hidden');
+    document.getElementById('overview-section').classList.add('hidden');
+    document.getElementById('import-section').classList.remove('hidden');
+    document.getElementById('planning-section').classList.remove('hidden');
+    document.getElementById('resume-execution-btn').classList.remove('hidden');
+  });
+
+  document.getElementById('resume-execution-btn').addEventListener('click', () => {
+    document.getElementById('import-section').classList.add('hidden');
+    document.getElementById('planning-section').classList.add('hidden');
+    document.getElementById('execution-section').classList.remove('hidden');
+    document.getElementById('overview-section').classList.remove('hidden');
+    renderExecution();
+    renderOverview();
+  });
+
   document.getElementById('reset-btn').addEventListener('click', () => {
     if (!confirm('Wirklich alles zurücksetzen? Alle Haltepunkte und Zeiten gehen verloren.')) return;
     stopGpsWatch();
@@ -558,6 +579,8 @@ function bindPlanningEvents() {
     if (file) loadRouteFromFile(file);
     e.target.value = ''; // erlaubt erneutes Laden derselben Datei
   });
+
+  document.getElementById('export-pdf-btn').addEventListener('click', exportRoutePdf);
 }
 
 // ---------- Route als JSON-Datei speichern / laden ----------
@@ -627,6 +650,150 @@ function loadRouteFromFile(file) {
     feedback.className = 'feedback error';
   };
   reader.readAsText(file);
+}
+
+// ---------- PDF-Export (Karte + Tabelle) ----------
+//
+// Erzeugt auf Verlangen ein PDF mit der aktuellen Routenkarte (als Bild,
+// per html2canvas eingefangen) und der Haltepunkt-Tabelle (als echte
+// PDF-Tabelle, per jsPDF-AutoTable) - komplett im Browser, kein Server
+// nötig. Falls die Karte aus irgendeinem Grund nicht als Bild eingefangen
+// werden kann (z. B. weil noch keine Route berechnet wurde, oder ein
+// Kachel-Server das Auslesen blockiert), wird trotzdem ein PDF nur mit der
+// Tabelle erzeugt - der Export schlägt also nie komplett fehl.
+async function exportRoutePdf() {
+  const btn = document.getElementById('export-pdf-btn');
+  const feedback = document.getElementById('export-pdf-feedback');
+
+  if (state.stops.length === 0) {
+    feedback.textContent = 'Bitte zuerst mindestens einen Haltepunkt anlegen.';
+    feedback.className = 'feedback error';
+    return;
+  }
+  if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+    feedback.textContent = 'PDF-Bibliothek konnte nicht geladen werden (evtl. kein Internetzugang). Bitte später erneut versuchen.';
+    feedback.className = 'feedback error';
+    return;
+  }
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="geo-spinner"></span> PDF wird erstellt …';
+  feedback.textContent = '';
+  feedback.className = 'feedback';
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 12;
+    let cursorY = margin;
+
+    doc.setFontSize(16);
+    doc.text('Routenplaner – Übersicht', margin, cursorY);
+    cursorY += 6;
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text('Erstellt am ' + new Date().toLocaleString('de-DE'), margin, cursorY);
+    doc.setTextColor(0);
+    cursorY += 6;
+
+    // Karte als Bild einfangen (falls sichtbar und mindestens 2 Haltepunkte
+    // eine Koordinate haben - siehe renderRouteMap()).
+    const mapSection = document.getElementById('route-map-section');
+    const mapVisible = mapSection && !mapSection.classList.contains('hidden');
+    let mapCaptured = false;
+    if (mapVisible) {
+      try {
+        const mapEl = document.getElementById('route-map');
+        // Sicherstellen, dass Leaflet die aktuelle Größe/Kacheln fertig
+        // gerendert hat, bevor der Schnappschuss gemacht wird.
+        if (routeMapLeaflet) routeMapLeaflet.invalidateSize();
+        await sleep(300);
+        const canvas = await html2canvas(mapEl, { useCORS: true, logging: false });
+        const imgData = canvas.toDataURL('image/png');
+        const imgWidth = pageWidth - margin * 2;
+        const imgHeight = imgWidth * (canvas.height / canvas.width);
+        doc.addImage(imgData, 'PNG', margin, cursorY, imgWidth, imgHeight);
+        cursorY += imgHeight + 8;
+        mapCaptured = true;
+      } catch (mapErr) {
+        // Karte konnte nicht eingefangen werden (z. B. Kachel-Server blockiert
+        // das Auslesen) - PDF trotzdem mit einem Hinweistext statt Bild fortsetzen.
+        doc.setFontSize(10);
+        doc.setTextColor(150);
+        doc.text('(Karte konnte in diesem PDF nicht eingebettet werden.)', margin, cursorY);
+        doc.setTextColor(0);
+        cursorY += 8;
+      }
+    } else {
+      doc.setFontSize(10);
+      doc.setTextColor(150);
+      doc.text('(Noch keine Route berechnet – keine Karte verfügbar. Bitte zuerst "Fahrzeiten automatisch berechnen" nutzen.)', margin, cursorY);
+      doc.setTextColor(0);
+      cursorY += 8;
+    }
+
+    // Tabelle: gleiche Spalten wie in der Planungsansicht, aber als reiner
+    // Text (keine Eingabefelder) - inkl. Total-Zeile am Ende.
+    const tableRows = state.stops.map((stop, i) => {
+      let nameCell = stop.name;
+      if (parseCoordName(stop.name) && stop.resolvedName) {
+        nameCell += '\n(' + stop.resolvedName + ')';
+      }
+      return [
+        String(i + 1),
+        nameCell,
+        i === 0 ? '–' : (stop.travelMin || ''),
+        stop.planArr || '',
+        stop.planDur || '',
+        stop.planDep || ''
+      ];
+    });
+
+    let totalTravel = 0, totalStay = 0;
+    state.stops.forEach(stop => {
+      const t = parseInt(stop.travelMin, 10);
+      if (!isNaN(t)) totalTravel += t;
+      const d = parseInt(stop.planDur, 10);
+      if (!isNaN(d)) totalStay += d;
+    });
+    tableRows.push([
+      '', 'Total', totalTravel > 0 ? formatMinAsHHMM(totalTravel) : '–',
+      '', totalStay > 0 ? formatMinAsHHMM(totalStay) : '–', ''
+    ]);
+
+    doc.autoTable({
+      startY: cursorY,
+      head: [['#', 'Haltepunkt', 'Fahrzeit davor (Min)', 'Geplante Ankunft', 'Aufenthalt (Min)', 'Geplante Abfahrt']],
+      body: tableRows,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9, cellPadding: 2.5 },
+      headStyles: { fillColor: [37, 99, 235] },
+      footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: 'bold' },
+      didParseCell: (data) => {
+        // Die von uns angehängte Total-Zeile (letzte Zeile) optisch hervorheben.
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [241, 245, 249];
+        }
+      }
+    });
+
+    const stamp = new Date().toISOString().slice(0, 16).replace(':', '-');
+    doc.save(`route-${stamp}.pdf`);
+
+    feedback.textContent = mapCaptured
+      ? 'PDF mit Karte und Tabelle wurde erstellt und heruntergeladen.'
+      : 'PDF wurde erstellt (nur mit Tabelle, ohne Karte – siehe Hinweis im PDF).';
+    feedback.className = 'feedback ok';
+  } catch (e) {
+    feedback.textContent = 'PDF-Export fehlgeschlagen: ' + e.message;
+    feedback.className = 'feedback error';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
 }
 
 // Schwelle für die Plausibilitätsprüfung: Ist die berechnete Fahrzeit zu einem

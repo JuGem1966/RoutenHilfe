@@ -9,6 +9,9 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -87,6 +90,7 @@
       <label class="sound-toggle"><input type="checkbox" id="sound-toggle" checked> Ton bei Erinnerung</label>
       <label class="sound-toggle"><input type="checkbox" id="gps-toggle"> <i class="fa-solid fa-location-crosshairs"></i> Standort-Erkennung (GPS) nutzen</label>
       <button id="start-route-btn" class="btn btn-success"><i class="fa-solid fa-play"></i> Route starten</button>
+      <button id="resume-execution-btn" class="btn btn-secondary hidden"><i class="fa-solid fa-location-arrow"></i> Zurück zur Live-Ansicht</button>
       <button id="reset-btn" class="btn btn-danger"><i class="fa-solid fa-rotate-left"></i> Zurücksetzen</button>
     </div>
 
@@ -97,6 +101,12 @@
       <span class="hint-inline">Speichert/lädt alle Haltepunkte, Zeiten und den Fortschritt als JSON-Datei auf deinem Gerät.</span>
     </div>
     <p id="save-load-feedback" class="feedback"></p>
+
+    <div class="save-load-row">
+      <button id="export-pdf-btn" class="btn btn-secondary"><i class="fa-solid fa-file-pdf"></i> Als PDF exportieren (Karte + Tabelle)</button>
+      <span class="hint-inline">Erzeugt ein PDF mit der aktuellen Routenkarte und der Haltepunkt-Tabelle zum Ausdrucken/Mitnehmen.</span>
+    </div>
+    <p id="export-pdf-feedback" class="feedback"></p>
   </section>
 
   <section id="live-banner" class="banner hidden" role="alert">
@@ -113,7 +123,10 @@
   </section>
 
   <section id="execution-section" class="card hidden">
-    <h2><span class="step-badge">3</span> Aktueller Haltepunkt</h2>
+    <div class="execution-header-row">
+      <h2><span class="step-badge">3</span> Aktueller Haltepunkt</h2>
+      <button id="back-to-planning-btn" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Zurück auf die Hauptseite</button>
+    </div>
     <p id="gps-status" class="hint-inline gps-status"></p>
     <div id="current-stop-card"></div>
   </section>

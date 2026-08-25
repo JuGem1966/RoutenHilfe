@@ -156,6 +156,13 @@ werden – über die kostenlosen Open-Source-Dienste **Nominatim** (Geocoding) u
      bewusst beim Nutzer, um Fehlauslösungen (z. B. beim Vorbeifahren) zu
      vermeiden. Voraussetzung: Der Haltepunkt braucht hinterlegte
      Koordinaten (automatisch vorhanden nach Nutzung des OSRM-Buttons).
+   - **„Zurück auf die Hauptseite“**: Oben rechts im Bereich „Aktueller
+     Haltepunkt“ gibt es einen Button, der zurück zur Planungsseite (Schritt
+     1/2) führt, ohne die laufende Route zu beenden oder Daten zu verlieren.
+     Auf der Planungsseite erscheint dann zusätzlich ein Button „Zurück zur
+     Live-Ansicht“, um jederzeit wieder zurück zu Schritt 3 zu wechseln –
+     z. B. um zwischendurch einen Haltepunkt zu ergänzen oder die Karte
+     anzusehen, ohne die Route neu starten zu müssen.
 
 4. **Route speichern & laden (JSON-Datei)**
    - „Route als Datei speichern“ lädt den kompletten aktuellen Zustand
@@ -169,6 +176,20 @@ werden – über die kostenlosen Open-Source-Dienste **Nominatim** (Geocoding) u
      Möglichkeit, Routen dauerhaft zu sichern, zwischen Geräten zu übertragen
      oder mehrere geplante Routen parallel als Dateien zu verwalten.
 
+5. **PDF-Export (Karte + Tabelle)**
+   - Der Button „Als PDF exportieren (Karte + Tabelle)“ erzeugt **auf
+     Verlangen** (kein automatischer Export) ein PDF mit genau zwei
+     Inhalten: der aktuellen Routenkarte (als Bild, per **html2canvas**
+     eingefangen) und der Haltepunkt-Tabelle inkl. Total-Zeile (als echte,
+     durchsuchbare PDF-Tabelle, per **jsPDF** + **jsPDF-AutoTable**).
+   - Läuft komplett im Browser, kein Server/Upload nötig; das PDF wird
+     direkt als Datei heruntergeladen (`route-JJJJ-MM-TTThh-mm.pdf`).
+   - Wurde noch keine Route berechnet (keine Karte sichtbar) oder lässt
+     sich die Karte ausnahmsweise nicht als Bild einfangen, wird trotzdem
+     ein PDF erzeugt – nur mit der Tabelle und einem entsprechenden
+     Hinweistext anstelle der Karte. Der Export schlägt also nie komplett
+     fehl.
+
 ## Verwendete externe Dienste (alle kostenlos, ohne API-Key)
 
 - **Nominatim** (`nominatim.openstreetmap.org`) – Geocoding der Ortsnamen
@@ -177,6 +198,10 @@ werden – über die kostenlosen Open-Source-Dienste **Nominatim** (Geocoding) u
   in der App bewusst leicht verzögert nacheinander ab.
 - **OSRM** (`router.project-osrm.org`) – Routing/Fahrzeitberechnung für
   Auto-Routen auf Basis von OpenStreetMap-Kartendaten.
+- **Leaflet** + OpenStreetMap-Kartenkacheln – Anzeige der Routenkarte und
+  des Karten-Auswahl-Dialogs.
+- **jsPDF** + **jsPDF-AutoTable** + **html2canvas** (alle per CDN, nur im
+  Browser des Nutzers aktiv) – Erstellung des PDF-Exports (Karte + Tabelle).
 
 **Wichtige Einschränkung:** Beide Dienste liefern Schätzungen auf Basis der
 Straßenkarte, **ohne Live-Verkehrsdaten** (kein Stau, keine Echtzeit-Ereignisse)
